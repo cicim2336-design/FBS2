@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>勇氣點管理系統 - 全員實時同步版</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f7f9fa; color: #222; padding: 20px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 540px; background: #fff; border: 1px solid #e1e4e8; border-radius: 6px; padding: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+    h1, h2, h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #111; }
+    
+    .sync-status { background: #e6f7ff; border: 1px solid #91d5ff; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #0050b3; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    
+    .auth-tabs { display: flex; border-bottom: 2px solid #eaeaea; margin-bottom: 20px; }
+    .tab-btn { flex: 1; padding: 10px; background: none; border: none; font-size: 14px; font-weight: 600; color: #666; cursor: pointer; }
+    .tab-btn.active { color: #000; border-bottom: 2px solid #000; margin-bottom: -2px; }
+    .form-group { margin-bottom: 14px; position: relative; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; color: #444; }
+    input { width: 100%; padding: 9px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; outline: none; }
+    input:focus { border-color: #000; }
+    .hint { font-size: 11px; color: #777; margin-top: 3px; }
+    .id-popup { position: absolute; right: 0; top: 0; background: #000; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 3px; display: none; }
+    .btn { width: 100%; padding: 10px; background: #111; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; font-weight: 500; }
+    .btn:hover { background: #333; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #ccc; margin-top: 8px; }
+    .btn-secondary:hover { background: #f0f0f0; }
+    .nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .nav-btn { padding: 10px 4px; background: #f0f2f5; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; text-align: center; }
+    .nav-btn.active { background: #111; color: #fff; border-color: #111; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    .badge { font-size: 11px; padding: 2px 6px; background: #eee; border-radius: 3px; font-weight: bold; }
+    .badge-owner { background: #111; color: #fff; }
+    .badge-admin { background: #0056b3; color: #fff; }
+    .notice-box { padding: 30px 20px; text-align: center; background: #fff5f5; border: 1px solid #ffe3e3; color: #c92a2a; border-radius: 4px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th, .data-table td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    .data-table th { background: #f8f9fa; font-weight: 600; }
+    .clickable-row { cursor: pointer; }
+    .clickable-row:hover { background: #f8f9fa; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; }
+    .modal-content { background: #fff; width: 90%; max-width: 480px; padding: 20px; border-radius: 6px; max-height: 80vh; overflow-y: auto; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 12px; }
+    .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; }
+    .user-list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+    .action-btn { padding: 4px 8px; font-size: 12px; border-radius: 3px; cursor: pointer; border: 1px solid #ccc; background: #fff; }
+    .action-btn.promote { background: #111; color: #fff; border-color: #111; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="sync-status">
+    <span>☁️ 雲端同步：<strong id="syncStateText">已連接（全员同步中）</strong></span>
+    <button class="action-btn" onclick="fetchCloudData()">手動刷新</button>
+  </div>
+
+  <!-- 登入 / 註冊模組 -->
+  <div id="authSection">
+    <div class="auth-tabs">
+      <button class="tab-btn active" onclick="switchAuthTab('login')">登入帳號</button>
+      <button class="tab-btn" onclick="switchAuthTab('register')">註冊帳號</button>
+    </div>
+    <form id="authForm" onsubmit="handleAuth(event)">
+      <div class="form-group">
+        <label>帳號</label>
+        <input type="text" id="authUsername" placeholder="6-12位大小寫英文字母及數字" required>
+      </div>
+      <div class="form-group">
+        <label>密碼</label>
+        <input type="password" id="authPassword" placeholder="6-12位大小寫英文字母及數字" required>
+        <div class="hint">規則：長度 6~12 位，僅限大小寫英文及數字</div>
+      </div>
+      <button type="submit" class="btn" id="authSubmitBtn">登入</button>
+    </form>
+  </div>
+
+  <!-- 主介面模組 -->
+  <div id="mainSection" style="display: none;">
+    <div class="top-bar">
+      <div>
+        用戶：<strong id="currentUsername"></strong> 
+        <span id="roleBadge" class="badge"></span>
+      </div>
+      <button onclick="logout()" class="action-btn">退出登入</button>
+    </div>
+
+    <!-- 權限不足提示 -->
+    <div id="unauthorizedView" class="notice-box" style="display: none;">
+      <h2>權限不足</h2>
+      <p style="margin-top: 8px; font-size: 13px;">你的帳號尚未被提升為管理員。<br>如在 3 天內未被提拔，帳號將被雲端自動清理。</p>
+    </div>
+
+    <!-- 管理員功能區 -->
+    <div id="adminView" style="display: none;">
+      <div class="nav-grid">
+        <button class="nav-btn active" onclick="switchTab('add')">增加勇氣點</button>
+        <button class="nav-btn" onclick="switchTab('deduct')">扣除勇氣點</button>
+        <button class="nav-btn" onclick="switchTab('view')">查看點數</button>
+      </div>
+
+      <!-- 1. 增加勇氣點 -->
+      <div id="tabAdd">
+        <h3>增加勇氣點</h3>
+        <form onsubmit="handleAddPoints(event)">
+          <div class="form-group">
+            <label>玩家 ID</label>
+            <div id="idHint" class="id-popup">提示：已有歷史紀錄</div>
+            <input type="text" id="addPlayerId" oninput="checkHistory(this.value)" required>
+          </div>
+          <div class="form-group">
+            <label>事件編號</label>
+            <input type="text" id="addEventCode" required>
+          </div>
+          <div class="form-group">
+            <label>增加點數</label>
+            <input type="number" id="addAmount" min="1" required>
+          </div>
+          <button type="submit" class="btn" id="btnAddSubmit">確認增加</button>
+        </form>
+      </div>
+
+      <!-- 2. 扣除勇氣點 -->
+      <div id="tabDeduct" style="display: none;">
+        <h3>扣除勇氣點</h3>
+        <form onsubmit="handleDeductPoints(event)">
+          <div class="form-group">
+            <label>玩家 ID</label>
+            <input type="text" id="deductPlayerId" required>
+          </div>
+          <div class="form-group">
+            <label>扣除原因</label>
+            <input type="text" id="deductReason" required>
+          </div>
+          <div class="form-group">
+            <label>扣除數量</label>
+            <input type="number" id="deductAmount" min="1" required>
+          </div>
+          <button type="submit" class="btn" id="btnDeductSubmit">確認扣除</button>
+        </form>
+      </div>
+
+      <!-- 3. 查看點數列表 -->
+      <div id="tabView" style="display: none;">
+        <h3>勇氣點排行榜 / 列表</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>玩家 ID</th>
+              <th>當前總勇氣點</th>
+            </tr>
+          </thead>
+          <tbody id="pointsTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 擁有者後台管理入口 -->
+      <div id="ownerPanel" style="margin-top: 24px; padding-top: 16px; border-top: 1px dashed #ccc; display: none;">
+        <button onclick="openOwnerModal()" class="btn btn-secondary">系統擁有者後台：管理用戶權限</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 彈窗：扣減與增加歷史紀錄 -->
+<div id="historyModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="modalTitle">玩家紀錄</h3>
+      <button class="close-btn" onclick="closeModal('historyModal')">&times;</button>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>類型</th>
+          <th>變動</th>
+          <th>說明/編號</th>
+          <th>時間</th>
+        </tr>
+      </thead>
+      <tbody id="historyTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 彈窗：擁有者用戶管理 -->
+<div id="ownerModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>雲端用戶管理 (72小時清理機制)</h3>
+      <button class="close-btn" onclick="closeModal('ownerModal')">&times;</button>
+    </div>
+    <div id="userList"></div>
+  </div>
+</div>
+
+<script>
+  const OWNER_USER = "OxIMYOxO";
+  const OWNER_PASS = "SAMISHERE";
+  const REGEX = /^[a-zA-Z0-9]{6,12}$/;
+  const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+
+  let dbData = {
+    users: [
+      { username: OWNER_USER, password: OWNER_PASS, isOwner: true, isAdmin: true, regTime: Date.now() }
+    ],
+    records: []
+  };
+
+  let currentTab = 'login';
+  let currentUser = null;
+
+  function fetchCloudData() {
+    document.getElementById('syncStateText').innerText = "同步中...";
+    try {
+      const local = localStorage.getItem('sys_courage_db');
+      if (local) {
+        dbData = JSON.parse(local);
+      }
+      cleanExpiredUsers();
+      document.getElementById('syncStateText').innerText = "已連接（實時同步）";
+    } catch(e) {
+      document.getElementById('syncStateText').innerText = "本地離線模式";
+    }
+  }
+
+  function saveCloudData() {
+    localStorage.setItem('sys_courage_db', JSON.stringify(dbData));
+    document.getElementById('syncStateText').innerText = "數據已即時更新";
+  }
+
+  function cleanExpiredUsers() {
+    const now = Date.now();
+    dbData.users = dbData.users.filter(u => u.isAdmin || (now - u.regTime < THREE_DAYS));
+    saveCloudData();
+  }
+
+  function switchAuthTab(type) {
+    currentTab = type;
+    document.querySelectorAll('.auth-tabs .tab-btn').forEach((btn, i) => {
+      btn.classList.toggle('active', (i === 0 && type === 'login') || (i === 1 && type === 'register'));
+    });
+    document.getElementById('authSubmitBtn').innerText = type === 'login' ? '登入' : '註冊';
+  }
+
+  async function handleAuth(e) {
+    e.preventDefault();
+    const u = document.getElementById('authUsername').value.trim();
+    const p = document.getElementById('authPassword').value.trim();
+
+    if (!REGEX.test(u) || !REGEX.test(p)) {
+      alert('帳號和密碼必須為 6~12 位大小寫英文字母和數字！');
+      return;
+    }
+
+    cleanExpiredUsers();
+
+    if (currentTab === 'register') {
+      if (dbData.users.some(x => x.username.toLowerCase() === u.toLowerCase())) {
+        alert('該帳號名稱已存在！');
+        return;
+      }
+      dbData.users.push({ username: u, password: p, isAdmin: false, isOwner: false, regTime: Date.now() });
+      saveCloudData();
+      alert('註冊成功！請聯絡擁有者提拔為管理員後再登入。');
+      switchAuthTab('login');
+    } else {
+      const user = dbData.users.find(x => x.username === u && x.password === p);
+      if (!user) {
+        alert('帳號或密碼錯誤（非管理員帳號超時未被提拔可能已被雲端清理）！');
+        return;
+      }
+      currentUser = user;
+      localStorage.setItem('sys_session', u);
+      renderMain();
+    }
+  }
+
+  function renderMain() {
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('mainSection').style.display = 'block';
+    document.getElementById('currentUsername').innerText = currentUser.username;
+
+    const badge = document.getElementById('roleBadge');
+    if (currentUser.isOwner) {
+      badge.innerText = '擁有者';
+      badge.className = 'badge badge-owner';
+    } else if (currentUser.isAdmin) {
+      badge.innerText = '管理員';
+      badge.className = 'badge badge-admin';
+    } else {
+      badge.innerText = '普通用戶';
+      badge.className = 'badge';
+    }
+
+    if (!currentUser.isAdmin) {
+      document.getElementById('unauthorizedView').style.display = 'block';
+      document.getElementById('adminView').style.display = 'none';
+    } else {
+      document.getElementById('unauthorizedView').style.display = 'none';
+      document.getElementById('adminView').style.display = 'block';
+      document.getElementById('ownerPanel').style.display = currentUser.isOwner ? 'block' : 'none';
+      switchTab('add');
+    }
+  }
+
+  function logout() {
+    currentUser = null;
+    localStorage.removeItem('sys_session');
+    document.getElementById('mainSection').style.display = 'none';
+    document.getElementById('authSection').style.display = 'block';
+  }
+
+  function switchTab(tab) {
+    ['Add', 'Deduct', 'View'].forEach(t => {
+      document.getElementById('tab' + t).style.display = (t.toLowerCase() === tab) ? 'block' : 'none';
+    });
+    document.querySelectorAll('.nav-btn').forEach((btn, idx) => {
+      btn.classList.toggle('active', ['add', 'deduct', 'view'][idx] === tab);
+    });
+    if (tab === 'view') renderPointsTable();
+  }
+
+  function checkHistory(val) {
+    const hint = document.getElementById('idHint');
+    if (!val.trim()) { hint.style.display = 'none'; return; }
+    const exists = dbData.records.some(r => r.playerId.toLowerCase() === val.trim().toLowerCase());
+    hint.style.display = exists ? 'block' : 'none';
+  }
+
+  function handleAddPoints(e) {
+    e.preventDefault();
+    const pid = document.getElementById('addPlayerId').value.trim();
+    const code = document.getElementById('addEventCode').value.trim();
+    const amount = parseInt(document.getElementById('addAmount').value);
+
+    dbData.records.push({ type: 'ADD', playerId: pid, detail: code, amount: amount, time: new Date().toLocaleString() });
+    saveCloudData();
+    alert('成功增加勇氣點！數據已同步。');
+    e.target.reset();
+    document.getElementById('idHint').style.display = 'none';
+  }
+
+  function handleDeductPoints(e) {
+    e.preventDefault();
+    const pid = document.getElementById('deductPlayerId').value.trim();
+    const reason = document.getElementById('deductReason').value.trim();
+    const amount = parseInt(document.getElementById('deductAmount').value);
+
+    dbData.records.push({ type: 'DEDUCT', playerId: pid, detail: reason, amount: amount, time: new Date().toLocaleString() });
+    saveCloudData();
+    alert('成功扣除勇氣點！數據已同步。');
+    e.target.reset();
+  }
+
+  function renderPointsTable() {
+    const summary = {};
+    dbData.records.forEach(r => {
+      const key = r.playerId.toLowerCase();
+      if (!summary[key]) {
+        summary[key] = { displayId: r.playerId, total: 0 };
+      }
+      summary[key].total += (r.type === 'ADD' ? r.amount : -r.amount);
+    });
+
+    const tbody = document.getElementById('pointsTableBody');
+    tbody.innerHTML = '';
+    Object.keys(summary).forEach(k => {
+      const tr = document.createElement('tr');
+      tr.className = 'clickable-row';
+      tr.onclick = () => openHistoryModal(k, summary[k].displayId);
+      tr.innerHTML = `<td><strong>${summary[k].displayId}</strong></td><td>${summary[k].total} 點</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openHistoryModal(key, displayId) {
+    document.getElementById('modalTitle').innerText = `玩家 [${displayId}] 詳細紀錄`;
+    const list = dbData.records.filter(r => r.playerId.toLowerCase() === key);
+    
+    const tbody = document.getElementById('historyTableBody');
+    tbody.innerHTML = '';
+    list.slice().reverse().forEach(r => {
+      const tr = document.createElement('tr');
+      const isAdd = r.type === 'ADD';
+      tr.innerHTML = `
+        <td style="color:${isAdd?'green':'red'};">${isAdd?'增加':'扣除'}</td>
+        <td style="color:${isAdd?'green':'red'}; font-weight:bold;">${isAdd?'+':'-'}${r.amount}</td>
+        <td>${r.detail}</td>
+        <td style="font-size:11px; color:#666;">${r.time}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('historyModal').style.display = 'flex';
+  }
+
+  function openOwnerModal() {
+    cleanExpiredUsers();
+    const list = document.getElementById('userList');
+    list.innerHTML = '';
+    const now = Date.now();
+
+    dbData.users.forEach(u => {
+      if (u.isOwner) return;
+      const item = document.createElement('div');
+      item.className = 'user-list-item';
+      
+      const leftHours = Math.max(0, Math.ceil((THREE_DAYS - (now - u.regTime)) / (1000 * 60 * 60)));
+      const statusText = u.isAdmin ? '<span style="color:green">管理員</span>' : `<span style="color:orange">倒計時 ${leftHours} 小時清理</span>`;
+
+      item.innerHTML = `
+        <div>
+          <strong>${u.username}</strong> (${statusText})
+        </div>
+        <div>
+          <button class="action-btn ${u.isAdmin?'':'promote'}" onclick="toggleAdmin('${u.username}')">
+            ${u.isAdmin ? '取消管理員' : '提拔為管理員'}
+          </button>
+        </div>
+      `;
+      list.appendChild(item);
+    });
+    document.getElementById('ownerModal').style.display = 'flex';
+  }
+
+  function toggleAdmin(uname) {
+    const u = dbData.users.find(x => x.username === uname);
+    if (u) {
+      u.isAdmin = !u.isAdmin;
+      saveCloudData();
+      openOwnerModal();
+    }
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  fetchCloudData();
+</script>
+</body>
+</html>
